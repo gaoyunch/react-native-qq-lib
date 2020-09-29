@@ -57,6 +57,10 @@ QQAPIEmitter.addListener("QQ_Resp", (resp) => {
   callback && callback(resp);
 });
 
+export function registerApp(universalLink) {
+  QQAPI.registerAppWithUniversalLink(universalLink);
+}
+
 export function login(scopes) {
   return QQAPI.login(scopes).then(() => waitForResponse("QQAuthorizeResponse"));
 }
