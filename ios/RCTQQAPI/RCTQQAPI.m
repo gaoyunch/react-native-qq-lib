@@ -8,7 +8,6 @@
 
 #import "RCTQQAPI.h"
 #import <TencentOpenAPI/TencentOAuth.h>
-#import <TencentOpenAPI/TencentOAuth.h>
 #import <TencentOpenAPI/QQApiInterface.h>
 #import <TencentOpenAPI/QQApiInterfaceObject.h>
 
@@ -17,7 +16,6 @@
 #import <React/RCTEventDispatcher.h>
 #import <React/RCTImageLoader.h>
 
-//#define NOT_REGISTERED (@"registerApp required.")
 #define INVOKE_FAILED (@"QQ API invoke returns false.")
 
 @interface RCTQQAPI()<QQApiInterfaceDelegate, TencentSessionDelegate> {
@@ -43,12 +41,16 @@ RCT_EXPORT_MODULE();
     return @[@"QQ_Resp"];
 }
 
++ (BOOL)requiresMainQueueSetup
+{
+  return YES;
+}
+
 - (instancetype)init
 {
     self = [super init];
     if (self) {
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleOpenURL:) name:@"RCTOpenURLNotification" object:nil];
-        [self _autoRegisterAPI];
     }
     return self;
 }
@@ -58,14 +60,21 @@ RCT_EXPORT_MODULE();
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
-- (void)handleOpenURL:(NSNotification *)note
+- (BOOL)handleOpenURL:(NSNotification *)aNotification
 {
-    NSDictionary *userInfo = note.userInfo;
-    NSString *url = userInfo[@"url"];
-    if ([TencentOAuth HandleOpenURL:[NSURL URLWithString:url]]) {
-    }
-    else {
-        [QQApiInterface handleOpenURL:[NSURL URLWithString:url] delegate:self];
+    NSString *aURLString =  [aNotification userInfo][@"url"];
+    NSURL *aURL = [NSURL URLWithString:aURLString];
+
+    if ([TencentOAuth HandleOpenURL:aURL]) {
+        return YES;
+    } else if ([TencentOAuth HandleUniversalLink:aURL]) {
+        return YES;
+    } else if ([QQApiInterface handleOpenURL:aURL delegate:self]) {
+       return YES;
+    } else if ([QQApiInterface handleOpenUniversallink:aURL delegate:self]) {
+       return YES;
+    } else {
+        return NO;
     }
 }
 
@@ -124,15 +133,17 @@ RCT_EXPORT_METHOD(logout)
 
 - (void)_shareToQQWithData:(NSDictionary *)aData scene:(int)aScene resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject{
     NSString *imageUrl = aData[RCTQQShareImageUrl];
-    if (imageUrl.length) {
+    if (imageUrl.length && _bridge.imageLoader) {
         CGSize size = CGSizeZero;
         if (![aData[RCTQQShareType] isEqualToString:RCTQQShareTypeImage]) {
             CGFloat thumbImageSize = 80;
             size = CGSizeMake(thumbImageSize,thumbImageSize);
         }
-        UIImage *image = [UIImage imageWithContentsOfFile:imageUrl];
-        [self _shareToQQWithData:aData image:image scene:aScene resolve:resolve reject:reject];
-        
+        [_bridge.imageLoader loadImageWithURLRequest:[RCTConvert NSURLRequest:imageUrl] callback:^(NSError *error, UIImage *image) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self _shareToQQWithData:aData image:image scene:aScene resolve:resolve reject:reject];
+            });
+        }];
     }
     else {
         [self _shareToQQWithData:aData image:nil scene:aScene resolve:resolve reject:reject];
@@ -146,7 +157,6 @@ RCT_EXPORT_METHOD(logout)
     NSString *title = aData[RCTQQShareTitle];
 
     NSString *description= aData[RCTQQShareDescription];
-    NSString *text = aData[RCTQQShareText];
     NSString *imgPath = aData[RCTQQShareImageUrl];
     NSString *webpageUrl = aData[RCTQQShareWebpageUrl]? :@"";
     NSString *flashUrl = aData[@"flashUrl"];
@@ -161,14 +171,14 @@ RCT_EXPORT_METHOD(logout)
                    previewImageURL:[NSURL URLWithString:imgPath]];
     }
     else if ([type isEqualToString: RCTQQShareTypeText]) {
-        message = [QQApiTextObject objectWithText:text];
+        message = [QQApiTextObject objectWithText:description];
     }
     else if ([type isEqualToString: RCTQQShareTypeImage]) {
         NSData *imgData = UIImageJPEGRepresentation(image, 1);
         message = [QQApiImageObject objectWithData:imgData
                                   previewImageData:imgData
-                                             title:title? :@""
-                                       description:description? :@""];
+                                             title:title
+                                       description:description];
     }
     else if ([type isEqualToString: RCTQQShareTypeAudio]) {
         QQApiAudioObject *audioObj = [QQApiAudioObject objectWithURL:[NSURL URLWithString:webpageUrl]
@@ -215,7 +225,7 @@ RCT_EXPORT_METHOD(logout)
 }
 
 
-- (void)_autoRegisterAPI
+RCT_EXPORT_METHOD(registerAppWithUniversalLink:(NSString *)universalLink)
 {
     NSString *appId = nil;
     NSArray *list = [[[NSBundle mainBundle] infoDictionary] valueForKey:@"CFBundleURLTypes"];
@@ -230,20 +240,19 @@ RCT_EXPORT_METHOD(logout)
             }
         }
     }
-    _qqapi = [[TencentOAuth alloc] initWithAppId:appId andDelegate:self];
-
+    _qqapi = [[TencentOAuth alloc] initWithAppId:appId andUniversalLink:universalLink andDelegate:self];
 }
 
 #pragma mark - qq delegate
 - (void)onReq:(QQBaseReq *)req
 {
-    
+
 }
 
 - (void)onResp:(QQBaseResp *)resp
 {
     if ([resp isKindOfClass:[SendMessageToQQResp class]]) {
-        
+
     }
     NSMutableDictionary *body = @{@"type":@"QQShareResponse"}.mutableCopy;
     body[@"errMsg"] = resp.errorDescription;
@@ -255,13 +264,13 @@ RCT_EXPORT_METHOD(logout)
     }
     body[@"result"] =resp.result;
     body[@"extendInfo"] =resp.extendInfo;
-    
+
     [self sendEventWithName:@"QQ_Resp" body:body];
 }
 
 - (void)isOnlineResponse:(NSDictionary *)response
 {
-    
+
 }
 
 #pragma mark - oauth delegate
@@ -288,7 +297,7 @@ RCT_EXPORT_METHOD(logout)
         body[@"errMsg"] = @"login failed";
     }
     [self sendEventWithName:@"QQ_Resp" body:body];
-    
+
 }
 
 - (void)tencentDidNotNetWork

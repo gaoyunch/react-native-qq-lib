@@ -18,7 +18,6 @@
 #define RCTQQShareType @"type"
 #define RCTQQShareTitle @"title"
 #define RCTQQShareDescription @"description"
-#define RCTQQShareText @"text"
 #define RCTQQShareWebpageUrl @"webpageUrl"
 #define RCTQQShareImageUrl @"imageUrl"
 
