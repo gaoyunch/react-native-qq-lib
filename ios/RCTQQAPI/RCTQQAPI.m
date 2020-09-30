@@ -65,17 +65,10 @@ RCT_EXPORT_MODULE();
     NSString *aURLString =  [aNotification userInfo][@"url"];
     NSURL *aURL = [NSURL URLWithString:aURLString];
 
-    if ([TencentOAuth HandleOpenURL:aURL]) {
-        return YES;
-    } else if ([TencentOAuth HandleUniversalLink:aURL]) {
-        return YES;
-    } else if ([QQApiInterface handleOpenURL:aURL delegate:self]) {
-       return YES;
-    } else if ([QQApiInterface handleOpenUniversallink:aURL delegate:self]) {
-       return YES;
-    } else {
-        return NO;
-    }
+    [TencentOAuth CanHandleOpenURL:aURL] && [TencentOAuth HandleOpenURL:aURL];
+    [TencentOAuth CanHandleUniversalLink:aURL] && [TencentOAuth HandleUniversalLink:aURL];
+    [QQApiInterface handleOpenURL:aURL delegate:self];
+    return [QQApiInterface handleOpenUniversallink:aURL delegate:self];
 }
 
 RCT_EXPORT_METHOD(isQQInstalled:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
@@ -164,8 +157,9 @@ RCT_EXPORT_METHOD(logout)
     QQApiObject *message = nil;
 
     if (type.length <=0 || [type isEqualToString: RCTQQShareTypeNews]) {
+        NSString *encodedWebpageUrl = [webpageUrl stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
         message = [QQApiNewsObject
-                   objectWithURL:[NSURL URLWithString:webpageUrl]
+                   objectWithURL:[NSURL URLWithString:encodedWebpageUrl]
                    title:title
                    description:description
                    previewImageURL:[NSURL URLWithString:imgPath]];
